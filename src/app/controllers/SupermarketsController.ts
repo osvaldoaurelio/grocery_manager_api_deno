@@ -1,63 +1,86 @@
-import { Context } from 'https://deno.land/x/oak/mod.ts';
+import { Context } from '../../deps.ts';
 
 import Supermarket from '../models/Supermarket.ts';
-import addProductsToSupermarkets from '../../services/addProductsToSupermarkets.ts';
+import addProductsToSupermarket from '../../services/addProductsToSupermarket.ts';
+import isValidCnpj from '../../services/isValidCnpj.ts';
+import { badRequest, notFound, ObjectID } from '../models/Base.ts';
 
-const baseUri = 'https://www.receitaws.com.br/v1/cnpj/';
-const notFoundObject = { data: { error: 'Supermarket not found!' } };
-const notMainActivity = { data: { error: 'Activity Supermarket not found' } }
+const baseURL = 'https://www.receitaws.com.br/v1/cnpj/';
 
 export default {
   async list(ctx: Context | any): Promise<any> {
-    const $fantasia = ctx.request.url.searchParams.get('fantasia') || '';
-    
+    const { request: { url: { searchParams } } } = ctx;
+    const searchParam: String = (searchParams.get('search') || '');
+    const search = searchParam.toUpperCase();
+
     try {
       const supermarkets = await Supermarket.find({
-        fantasia: { $ne: null , $regex: `.*${$fantasia}.*` }
+        $or: [
+          { bairro: { $regex: `.*${search}.*` } },
+          { fantasia: { $regex: `.*${search}.*` } },
+          { municipio: { $regex: `.*${search}.*` } },
+          { logradouro: { $regex: `.*${search}.*` } }
+        ]
       });
 
-      const supermarketsPromisses = supermarkets.map(addProductsToSupermarkets);
+      const supermarketsPromisses = supermarkets.map(addProductsToSupermarket);
 
       const data = await Promise.all(supermarketsPromisses);
 
       return ctx.response.body = { data };
     } catch (err) {
-      throw new Error(err);
+      console.log(err);
     }    
   },
 
   async show(ctx: Context | any): Promise<any> {
-    const _id = { $oid: ctx.params.id };
+    const _id: ObjectID = { $oid: ctx.params.id };
 
     try {
-      const supermarket = await Supermarket.findOne({ _id });
-  
       ctx.response.status = 404;
-      if(!supermarket) return ctx.response.body = notFoundObject;
+      const supermarketFound = await Supermarket.findOne({ _id });
+      if(!supermarketFound) return ctx.response.body = notFound.supermarket;
 
-      const data = await addProductsToSupermarkets(supermarket)
+      const data = await addProductsToSupermarket(supermarketFound);
   
       ctx.response.status = 200;
-      return ctx.response.body = { data };      
+      return ctx.response.body = { data };
     } catch (err) {
-      throw new Error(err);
+      console.log(err);
     }
   },
 
-  async store(ctx: Context | any): Promise<any> {    
+  async store(ctx: Context | any): Promise<any> {
     try {
-      const { value: { cnpj } } = await ctx.request.body();
+      const { value: { cnpj: cnpjRequest } } = await ctx.request.body();
+      const cnpj = cnpjRequest.replace(/[^\d]+/g,'')
+
+      ctx.response.status = 400;
+      if(!cnpj) return ctx.response.body = badRequest.required;
+      if(!isValidCnpj(cnpj)) return ctx.response.body = badRequest.error;
 
       const supermarketFound = await Supermarket.findOne({ cnpj })
-      if(supermarketFound) return ctx.response.body = { data: supermarketFound }
+      ctx.response.status = 200;
+      if(supermarketFound) return ctx.response.body = { data: supermarketFound };
 
-      const response = await fetch(`${baseUri}${cnpj}`);
+      const response = await fetch(`${baseURL}${cnpj}`);
       const data = await response.json();
 
-      const { atividade_principal: [{ text: atividade }] } = data;      
-      if(!atividade.includes('mercado')) return ctx.response.body = notMainActivity
+      const {
+        fantasia,
+        municipio,
+        uf,
+        bairro,
+        logradouro,
+        numero,
+        cep,
+        telefone,
+        atividade_principal: [{ text: atividade_principal }]
+      } = data;
 
-      const { fantasia, municipio, uf, bairro, logradouro, numero, cep, telefone } = data;
+      ctx.response.status = 406;
+      if(!atividade_principal.includes('mercado')) return ctx.response.body = badRequest.mainActivity;
+
       const _id = await Supermarket.insertOne({
         fantasia,
         cnpj,
@@ -67,91 +90,16 @@ export default {
         logradouro,
         numero,
         cep,
-        telefone
+        telefone,
+        products: []
       });
       
       const supermarket = await Supermarket.findOne({ _id });
 
-      if(!supermarket) {
-        ctx.response.status = 404;
-        return ctx.response.body = { data: {
-          error: 'Supermarket not found!' }
-        };
-      }
-
-      // addProductsToSupermarket
-
       ctx.response.status = 201;
       return ctx.response.body = { data: supermarket };
     } catch (err) {
-      // throw new Error(err);
-      console.log(err)
+      console.log(err);
     }
-  },
-
-  async update(ctx: Context | any): Promise<any> {
-    const id = ctx.params.id;
-    const _id = { $oid: id };
-
-    try {
-      const data = await ctx.request.body();
-      const {
-        name,
-        address,
-        cnpj,
-        phone,
-        obs,
-      } = data.value;
-      const $set = {
-        name: String(name).toLowerCase().trim(),
-        address: String(address).toLowerCase().trim(),
-        cnpj: String(cnpj).toLowerCase().trim(),
-        phone: String(phone).toLowerCase().trim(),
-        obs: String(obs).toLowerCase().trim(), 
-      };
-
-      const { matchedCount } = await Supermarket.updateOne(
-        { _id },
-        { $set },
-      );
-      
-      if(!matchedCount) {
-        ctx.response.status = 404;
-        return ctx.response.body = { data: {
-            error: 'Supermarket not found!'
-          }
-        };
-      }
-
-      const supermarket = await Supermarket.findOne({ _id });
-
-      return ctx.response.body = { data: supermarket };
-    } catch (err) {
-      throw new Error(err);
-    }    
-  },
-
-  async delete(ctx: Context | any): Promise<any> {
-    const id = ctx.params.id;
-    const _id = { $oid: id };
-
-    try {
-      const deleteCount = await Supermarket.deleteOne({ _id });
-      
-      if(!deleteCount) {
-        ctx.response.status = 404;
-        return ctx.response.body = {
-          data: {
-            error: 'Supermarket not found!'
-          }
-        };
-      }
-
-      ctx.response.status = 204;
-      return ctx.response.body = '';
-    } catch (err) {
-      throw new Error(err);
-    }
-  },
-
+  }  
 };

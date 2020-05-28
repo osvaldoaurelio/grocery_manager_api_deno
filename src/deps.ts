@@ -1,4 +1,4 @@
-export { Application } from 'https://deno.land/x/oak/mod.ts';
+export { Application, ListenOptions } from 'https://deno.land/x/oak/mod.ts';
 export { config } from 'https://deno.land/x/dotenv/mod.ts';
 export { Context } from 'https://deno.land/x/oak/mod.ts';
 export { MongoClient } from 'https://deno.land/x/mongo/mod.ts';

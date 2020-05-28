@@ -1,27 +1,23 @@
 import { Router } from './deps.ts'
 
-import productController from './app/controllers/ProductsController.ts';
-import SupermarketController from './app/controllers/SupermarketsController.ts';
+import ProductsController from './app/controllers/ProductsController.ts';
+import SupermarketsController from './app/controllers/SupermarketsController.ts';
+import SupermarketProductsController from './app/controllers/SupermarketProductsController.ts';
 
-const router = new Router();
+const router = new Router({ prefix: '/api/v1/' });
 
 router
-  .get('/', async (ctx: any): Promise<any> => {
-    const response = await fetch('https://www.receitaws.com.br/v1/cnpj/07581644000160');
-    const data = await response.json();
-    return ctx.response.body = { data };
-  })
+  .get('products', ProductsController.list)
+  .get('products/:id', ProductsController.show)
+  .post('products', ProductsController.store)
+  .put('products/:id', ProductsController.update)
 
-  .get('/products', productController.list)
-  .get('/products/:id', productController.show)
-  .post('/products', productController.store)
-  .put('/products/:id',  productController.update)
-  .delete('/products/:id', productController.delete)
+  .get('supermarkets', SupermarketsController.list)
+  .get('supermarkets/:id', SupermarketsController.show)
+  .post('supermarkets', SupermarketsController.store)
 
-  .get('/supermarkets', SupermarketController.list)
-  .get('/supermarkets/:id', SupermarketController.show)
-  .post('/supermarkets', SupermarketController.store)
-  .put('/supermarkets/:id', SupermarketController.update)
-  .delete('/supermarkets/:id', SupermarketController.delete)
+  .post('supermarkets/:id/products', SupermarketProductsController.addProduct)
+  .put('supermarkets/:id/products', SupermarketProductsController.updateProduct)
+  .delete('supermarkets/:id/products', SupermarketProductsController.removeProduct)
 
 export default router;
